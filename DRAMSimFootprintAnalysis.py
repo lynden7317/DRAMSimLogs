@@ -21,7 +21,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
 reload(logging)
-logging.basicConfig(level = logging.INFO)
+logging.basicConfig(level = logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -47,6 +47,10 @@ class Application(Frame):
         # === for using embedding canvas ====                         
         self.FF = Figure(figsize = (5, 5), dpi = 100)
         
+        self.inputFrame = None
+        self.inputLabels = {}
+        
+        self.totalInputs = 0
         self.directoryName = None
         self.fileNames = None
         self.totalCHidx = []
@@ -54,8 +58,9 @@ class Application(Frame):
         self.totalFootprint = []
         
                
-        Button(self.master, text='open byte logs', command=self.askopenfilenames).grid(row=0, column=0, sticky=E+W)
-        Button(self.master, text='plot', command=self.canvasPlot).grid(row=0, column=1, sticky=E+W)
+        Button(self.master, text='open byte logs', command = lambda opt='new':self.askopenfilenames(opt)).grid(row=0, column=0, sticky=E+W)        
+        Button(self.master, text='add byte logs', command = lambda opt='add':self.askopenfilenames(opt)).grid(row=0, column=1, sticky=E+W)
+        Button(self.master, text='plot', command=self.canvasPlot).grid(row=0, column=2, sticky=E+W)
         
         #but_opt = {'fill': Tkconstants.BOTH, 'padx':5, 'pady': 5} 
         #Button(self, text = 'askopenfilenames', command = self.askopenfilenames).pack(**but_opt)
@@ -70,19 +75,29 @@ class Application(Frame):
         #options['title'] = 'This is a title'
     
 
-    def askopenfilenames(self):
+    def askopenfilenames(self, opt):
         # ==== set File options ====
         file_opt = options = {}
         options['defaultextension'] = '.txt'
         options['filetypes'] = [('all files', '.*'), ('text files', '.txt')]
-        options['initialdir'] = 'C:\\'
+        options['initialdir'] = 'D:\\'
         options['initialfile'] = 'myfile.txt'
         options['parent'] = root
         options['title'] = 'This is a title'
         
-        self.fileNames = tkFileDialog.askopenfilenames(**file_opt)
-        if len(self.fileNames) > 0:
-            self._loadByteLogs()
+        if opt == 'new':            
+            self.fileNames = tkFileDialog.askopenfilenames(**file_opt)
+            if len(self.fileNames) > 0:
+                self._loadByteLogs()
+        
+        if opt == 'add':            
+            self.fileNames = tkFileDialog.askopenfilenames(**file_opt)
+            if len(self.fileNames) > 0:
+                self._addByteLogs()
+        
+        self.inputLabels[self.totalInputs] = self.fileNames[0].split('/')[-2]
+        self._addLabels()
+                
     
     def canvasPlot(self):
         if self.FF.canvas != None:
@@ -98,13 +113,14 @@ class Application(Frame):
         timestamp = (int(self.comBoxVar.get().split(' ')[0]), int(self.comBoxVar.get().split(' ')[0])/5)
         logging.debug('timestamp= %s', timestamp)
         
-        totalChFootprint = []
-        totalChBW = []
-        for ft in self.totalFootprint:
+        for ftId in xrange(self.totalInputs):
+            totalChFootprint = []
+            totalChBW = []
+            ft = self.totalFootprint[ftId]                
             # === Change epoch to timestamp ===
             timeFootprint = []
             stamp = len(ft)/timestamp[1]
-            res = len(ft)%timestamp[1]
+            #res = len(ft)%timestamp[1]
             for i in xrange(stamp):
                 sumByte = 0.0
                 for j in xrange(timestamp[1]):
@@ -122,22 +138,24 @@ class Application(Frame):
             if len(totalChBW) == 0:
                 for i in xrange(len(timeFootprint)):
                     totalChBW.append(round(float(timeFootprint[i]*clockFrq*1000)/float(epoch), 3))
-            else:
-                for i in xrange(len(timeFootprint)):
-                    totalChBW[i] = totalChBW[i] + round(float(timeFootprint[i]*clockFrq*1000)/float(epoch), 3)
+                else:
+                    for i in xrange(len(timeFootprint)):
+                        totalChBW[i] = totalChBW[i] + round(float(timeFootprint[i]*clockFrq*1000)/float(epoch), 3)
         
-        # ==== plots ====
-        p1 = self.FF.add_subplot(211)
-        XX = np.linspace(0, len(totalChFootprint)-1, len(totalChFootprint), endpoint=True)
-        p1.plot(XX, totalChFootprint)
-        p1.set_ylabel('KB', fontsize=14)
-        p1.set_title('Sum of total CH')
+            # ==== plots ====
+            p1 = self.FF.add_subplot(211)
+            XX = np.linspace(0, len(totalChFootprint)-1, len(totalChFootprint), endpoint=True)
+            p1.plot(XX, totalChFootprint)
+            p1.set_ylabel('KB', fontsize=14)
+            p1.set_title('Sum of total CH')
         
-        p2 = self.FF.add_subplot(212)
-        p2.plot(XX, totalChBW)
-        p2.set_ylabel('BW(GB/s)', fontsize=14)
-        p2.set_xlabel(str(timestamp[0])+' us', fontsize=14)
+            p2 = self.FF.add_subplot(212)
+            p2.plot(XX, totalChBW)
+            p2.set_ylabel('BW(GB/s)', fontsize=14)
+            p2.set_xlabel(str(timestamp[0])+' us', fontsize=14)
         
+        p1.legend([self.inputLabels[t] for t in sorted(self.inputLabels.keys())])
+        p2.legend([self.inputLabels[t] for t in sorted(self.inputLabels.keys())])
         canvas = FigureCanvasTkAgg(self.FF, master=self.Frame2)
         canvas.show()
         canvas.get_tk_widget().pack(side=BOTTOM, fill=BOTH, expand=True, pady=10)
@@ -158,14 +176,66 @@ class Application(Frame):
         comBox.grid(row=1, column=0)
         #comBox.bind('<<ComboboxSelected>>', self._comboxCallback)
     
+    def _addLabels(self):
+        if self.inputFrame == None:
+            self.inputFrame = Frame(self.Frame1)
+            for i in sorted(self.inputLabels.keys()):
+                label1 = Label(self.inputFrame, text='*'+str(i)+'. ')
+                label1.grid(row=0, column=0)
+                label2 = Label(self.inputFrame, text=self.inputLabels[i])
+                label2.grid(row=0, column=1)
+        else:
+            del self.inputFrame
+            # ==== renew ====
+            self.inputFrame = Frame(self.Frame1)
+            index = 0
+            for i in sorted(self.inputLabels.keys()):
+                label1 = Label(self.inputFrame, text='*'+str(i)+'. ')
+                label1.grid(row=index/4, column=index%4)
+                index += 1
+                label2 = Label(self.inputFrame, text=self.inputLabels[i])
+                label2.grid(row=index/4, column=index%4)
+                index += 1
+            
+        self.inputFrame.grid(row=0, column=1, padx=30)                      
+            
+    
     '''
     def _comboxCallback(self, event):
         logging.debug('Var: %s', self.comBoxVar.get())
     '''
 
-
+    def _addByteLogs(self):
+        logging.debug('add file name list: %s', self.fileNames)
+        self.totalInputs += 1
+        
+        for fname in self.fileNames:
+            try:
+                fhead = open(fname)
+            except:
+                logging.error('File %s cannot be opened', fname)
+                exit(1)
+            
+            byteLog = [0]
+            footprint = [0]
+            #CH = 0
+            for line in fhead:
+                line = line.rstrip()
+                CH = int(re.findall('Ch\S*=([0-9])', line)[0])
+                byteEpoch = re.findall('total\S*= ([0-9]+)', line)
+                byteLog.append(int(byteEpoch[0]))
+            
+            for i in xrange(len(byteLog)-1):
+                B = (byteLog[i+1] - byteLog[i])/1000
+                footprint.append(B)
+            
+            self.totalCHidx.append(CH)
+            self.totalByteLogs.append(byteLog)
+            self.totalFootprint.append(footprint)        
+        
     def _loadByteLogs(self):
         logging.debug('file name list: %s', self.fileNames)
+        self.totalInputs += 1
         if len(self.totalFootprint) > 0:
             del self.totalCHidx, self.totalByteLogs, self.totalFootprint
             self.totalCHidx = []
