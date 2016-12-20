@@ -53,8 +53,7 @@ class Application(Frame):
         self.totalInputs = 0
         self.directoryName = None
         self.fileNames = None
-        self.totalCHidx = []
-        self.totalByteLogs = []
+
         self.totalFootprint = []
         
                
@@ -107,16 +106,21 @@ class Application(Frame):
             self.Frame2 = Frame(self.master)
             self.Frame2.grid(row=2, column=0, rowspan=3, columnspan=5, sticky=W+E+N+S, pady=10)
         
-        logging.debug('Var: %s', self.comBoxVar.get())
+        logging.debug('<canvasPlot> Var= %s', self.comBoxVar.get())
         clockFrq = 1  # 1GHz
         epoch = 5000  # 5000 clock
         timestamp = (int(self.comBoxVar.get().split(' ')[0]), int(self.comBoxVar.get().split(' ')[0])/5)
-        logging.debug('timestamp= %s', timestamp)
+        
+        logging.debug('<canvasPlot> timestamp= %s', timestamp)
+        logging.debug('<canvasPlot> length of totalInputs= %s', self.totalInputs)        
+        logging.debug('<canvasPlot> length of totalFootprint= %s', len(self.totalFootprint))
         
         for ftId in xrange(self.totalInputs):
             totalChFootprint = []
             totalChBW = []
-            ft = self.totalFootprint[ftId]                
+            ft = self.totalFootprint[ftId]
+            logging.debug('<canvasPlot> ftId= %s', ftId)
+            logging.debug('<canvasPlot> length of ft= %s', len(self.totalFootprint[ftId]))   
             # === Change epoch to timestamp ===
             timeFootprint = []
             stamp = len(ft)/timestamp[1]
@@ -128,19 +132,17 @@ class Application(Frame):
         
                 timeFootprint.append(sumByte/float(timestamp[1]))
             
-            if len(totalChFootprint) == 0:
-                totalChFootprint = copy.copy(timeFootprint)
-            else:    
-                for i in xrange(len(timeFootprint)):
-                    totalChFootprint[i] = totalChFootprint[i] + timeFootprint[i]
+            totalChFootprint = copy.copy(timeFootprint)
+            # ==== Bandwidth ====
+            for i in xrange(len(timeFootprint)):
+                # === timeFootprint[i] in KB, clock in GHz --> timeFootprint*1000 change to byte ===
+                # === BW: (MemoryAccess * ClockFreq)/TotalClock === 
+                totalChBW.append(round(float(timeFootprint[i]*clockFrq*1000)/float(epoch), 3))
             
-            # ==== Bandwidth ====     
-            if len(totalChBW) == 0:
-                for i in xrange(len(timeFootprint)):
-                    totalChBW.append(round(float(timeFootprint[i]*clockFrq*1000)/float(epoch), 3))
-                else:
-                    for i in xrange(len(timeFootprint)):
-                        totalChBW[i] = totalChBW[i] + round(float(timeFootprint[i]*clockFrq*1000)/float(epoch), 3)
+            totalTransfer = np.sum(totalChFootprint)
+            avgBW = np.mean(totalChBW)
+            logging.info('Total Bytes Transferred= %s KB', totalTransfer)
+            logging.info('Average Bandwidth= %s GB/s', avgBW)
         
             # ==== plots ====
             p1 = self.FF.add_subplot(211)
@@ -199,16 +201,12 @@ class Application(Frame):
             
         self.inputFrame.grid(row=0, column=1, padx=30)                      
             
-    
-    '''
-    def _comboxCallback(self, event):
-        logging.debug('Var: %s', self.comBoxVar.get())
-    '''
 
     def _addByteLogs(self):
         logging.debug('add file name list: %s', self.fileNames)
         self.totalInputs += 1
         
+        self.totalFootprint.append([])
         for fname in self.fileNames:
             try:
                 fhead = open(fname)
@@ -221,28 +219,29 @@ class Application(Frame):
             #CH = 0
             for line in fhead:
                 line = line.rstrip()
-                CH = int(re.findall('Ch\S*=([0-9])', line)[0])
                 byteEpoch = re.findall('total\S*= ([0-9]+)', line)
                 byteLog.append(int(byteEpoch[0]))
             
             for i in xrange(len(byteLog)-1):
-                B = (byteLog[i+1] - byteLog[i])/1000
+                # ==== Change to KB ====
+                B = round(float((byteLog[i+1] - byteLog[i]))/1000.0, 2)
                 footprint.append(B)
             
-            self.totalCHidx.append(CH)
-            self.totalByteLogs.append(byteLog)
-            self.totalFootprint.append(footprint)        
+            if len(self.totalFootprint[self.totalInputs-1]) <= 0:
+                self.totalFootprint[self.totalInputs-1] = copy.copy(footprint)
+            else:
+                for idx in xrange(len(footprint)):
+                    self.totalFootprint[self.totalInputs-1][idx] += footprint[idx]
+        
         
     def _loadByteLogs(self):
         logging.debug('file name list: %s', self.fileNames)
         self.totalInputs += 1
         if len(self.totalFootprint) > 0:
-            del self.totalCHidx, self.totalByteLogs, self.totalFootprint
-            self.totalCHidx = []
-            self.totalByteLogs = []
+            del self.totalFootprint
             self.totalFootprint = []
             
-        
+        self.totalFootprint.append([])
         for fname in self.fileNames:
             try:
                 fhead = open(fname)
@@ -252,20 +251,23 @@ class Application(Frame):
             
             byteLog = [0]
             footprint = [0]
-            #CH = 0
+
             for line in fhead:
                 line = line.rstrip()
-                CH = int(re.findall('Ch\S*=([0-9])', line)[0])
                 byteEpoch = re.findall('total\S*= ([0-9]+)', line)
                 byteLog.append(int(byteEpoch[0]))
             
             for i in xrange(len(byteLog)-1):
-                B = (byteLog[i+1] - byteLog[i])/1000
+                # ==== Change to KB ====
+                B = round(float((byteLog[i+1] - byteLog[i]))/1000.0, 2)
                 footprint.append(B)
             
-            self.totalCHidx.append(CH)
-            self.totalByteLogs.append(byteLog)
-            self.totalFootprint.append(footprint)
+            if len(self.totalFootprint[self.totalInputs-1]) <= 0:
+                self.totalFootprint[self.totalInputs-1] = copy.copy(footprint)
+            else:
+                for idx in xrange(len(footprint)):
+                    self.totalFootprint[self.totalInputs-1][idx] += footprint[idx]
+            
 
 
 if __name__ == '__main__':  
